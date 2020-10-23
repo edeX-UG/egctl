@@ -504,6 +504,20 @@ Action str_to_action(const char *action)
     return ACTION_INVALID;
 }
 
+Action char_to_action(const char action)
+{
+    if ('1' == action)
+        return ACTION_ON;
+    else if ('0' == action)
+        return ACTION_OFF;
+    else if (('t' == action) || ('%' == action))
+        return ACTION_TOGGLE;
+    else if (('l' == action) || ('*' == action))
+        return ACTION_LEFT;
+
+    return ACTION_INVALID;
+}
+
 Actions argv_to_actions(char *argv[])
 {
     Actions actions;
@@ -514,6 +528,26 @@ Actions argv_to_actions(char *argv[])
 
         if (action == ACTION_INVALID)
             fatal("Invalid action for socket %zu: %s", i+1, argv[i]);
+
+        actions.socket[i] = action;
+    }
+
+    return actions;
+}
+
+Actions argv_simplified_to_actions(char * argv)
+{
+    Actions actions;
+    size_t i;
+
+    if (4 != strlen(argv))
+        fatal("Invalid action string: %s", argv);
+
+    for (i = 0; i < 4; ++i) {
+        Action action = char_to_action(argv[i]);
+
+        if (action == ACTION_INVALID)
+            fatal("Invalid action for socket %zu: %c", i+1, argv[i]);
 
         actions.socket[i] = action;
     }
@@ -613,12 +647,15 @@ int main(int argc, char *argv[])
     Config conf;
     Session sess;
 
-    if (argc != 2 && argc != 6) {
-        fatal("egctl 0.1: EnerGenie EG-PMS-LAN control utility\n\n"
+    if (argc != 2 && argc != 3 && argc != 6) {
+        fatal("egctl 0.2: EnerGenie EG-PMS-LAN control utility\n\n"
               "Usage: egctl NAME [S1 S2 S3 S4]\n"
+              "       egctl NAME [Sc]\n"
               "  NAME is the name of the device in the egtab file\n"
               "  Sn is an action to perform on n-th socket: "
-              "on, off, toggle or left");
+              "on, off, toggle or left\n"
+              "  Sc are the simplified combined options for all sockets:\n"
+              "    0 - off, 1 - on, t / %% - toggle, l / * - left");
     }
 
     conf = get_device_conf(argv[1]);
@@ -626,8 +663,12 @@ int main(int argc, char *argv[])
     establish_connection(sock);
     sess = authorize(sock, conf.key);
 
-    if (argc == 6) {
-        Actions act = argv_to_actions(argv+2);
+    if ((argc == 6) || (argc == 3)) {
+        Actions act;
+        if (argc == 6)
+            act = argv_to_actions(argv+2);
+        else
+            act = argv_simplified_to_actions(argv[2]);
         Status status = recv_status(sock, sess, conf.proto);
         Controls ctrl = construct_controls(status, act);
         send_controls(sock, sess, ctrl);
